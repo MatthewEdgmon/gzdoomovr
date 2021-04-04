@@ -414,6 +414,61 @@ if( ${HAVE_VM_JIT} )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${ASMJIT_LIBRARIES}")
 endif()
 
+if(OPENVR_SUPPORT)
+	find_path(OPENVR_SDK_PATH
+		NAMES
+			headers/openvr.h
+		HINTS
+			ENV OPENVR_DIR ENV PROGRAMFILES ENV HOME ENV USERPROFILE
+		PATH_SUFFIXES
+			openvr git/openvr
+	)
+	find_path(OPENVR_INCLUDE_DIRECTORY
+		NAMES
+			openvr.h
+		HINTS
+			${OPENVR_SDK_PATH}/headers
+	)
+	include_directories("${OPENVR_INCLUDE_DIRECTORY}")
+	option( OPENVR_STATIC "Statically link OpenVR API" OFF )
+	if(OPENVR_STATIC)
+		# Incorporate the whole openvr API into zdoom, using a few rules lifted from the OpenVR CMakeLists.txt files
+		# This branch avoids the need to ship openvr_api.dll
+		add_definitions( -DVR_API_PUBLIC )
+		if(WIN32 AND X64)
+			add_definitions( -DWIN64 )
+		endif()
+		include_directories(${OPENVR_SDK_PATH}/src ${OPENVR_SDK_PATH}/src/vrcommon)
+		file(GLOB OPENVR_SOURCES "${OPENVR_SDK_PATH}/src/*.cpp" "${OPENVR_SDK_PATH}/src/vrcommon/*.cpp")
+	else() # link to shared OpenVR library
+		# Link to correct library for this platform
+		if(WIN32)
+			set(OPENVR_PLAT "win")
+		elseif( APPLE )
+			set(OPENVR_PLAT "osx")
+		else()
+			set(OPENVR_PLAT "linux")
+		endif()
+		if(X64)
+			set(OPENVR_PLAT ${OPENVR_PLAT}64)
+		else()
+			set(OPENVR_PLAT ${OPENVR_PLAT}32)
+		endif()
+		find_library(OPENVR_LIBRARY
+			NAMES openvr_api
+			HINTS "${OPENVR_SDK_PATH}/lib/${OPENVR_PLAT}/"
+		)
+		list(APPEND ZDOOM_LIBS ${OPENVR_LIBRARY})
+		# Find shared library file needed for package distribution
+		find_program(OPENVR_SHARED_LIBRARY
+			NAMES libopenvr_api.so libopenvr_api.dylib openvr_api.dll
+			PATHS "${OPENVR_SDK_PATH}/bin/${OPENVR_PLAT}/"
+			NO_DEFAULT_PATH
+		)
+	endif()
+	add_definitions("-DOPENVR_SUPPORT")
+endif()
+
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
 	win32/i_steam.cpp
@@ -1189,6 +1244,7 @@ add_executable( zdoom WIN32 MACOSX_BUNDLE
 	${SYSTEM_SOURCES}
 	${FASTMATH_SOURCES}
 	${PCH_SOURCES}
+	${OPENVR_SOURCES}
 	common/utility/x86.cpp
 	common/thirdparty/strnatcmp.c
 	common/utility/zstring.cpp
@@ -1395,6 +1451,11 @@ endif()
 install(TARGETS zdoom
 		DESTINATION ${INSTALL_PATH}
 		COMPONENT "Game executable")
+if(OPENVR_SHARED_LIBRARY)
+	install(PROGRAMS ${OPENVR_SHARED_LIBRARY} 
+		DESTINATION ${INSTALL_PATH}
+		COMPONENT "Shared libraries")
+endif()
 
 source_group("Audio Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/sound/.+")
 source_group("Game Data" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gamedata/.+")

@@ -36,6 +36,10 @@
 #include "gl_buffers.h"
 #include "templates.h"
 
+#ifdef OPENVR_SUPPORT
+#include <openvr.h>
+#endif /* OPENVR_SUPPORT */
+
 EXTERN_CVAR(Int, vr_mode)
 EXTERN_CVAR(Float, vid_saturation)
 EXTERN_CVAR(Float, vid_brightness)
@@ -366,6 +370,20 @@ void FGLRenderer::PresentQuadStereo()
 	}
 }
 
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+#ifdef OPENVR_SUPPORT
+
+void FGLRenderer::PresentOpenVR()
+{
+	
+}
+
+#endif /* OPENVR_SUPPORT */
 
 void FGLRenderer::PresentStereo()
 {
@@ -397,6 +415,12 @@ void FGLRenderer::PresentStereo()
 	case VR_SIDEBYSIDELETTERBOX:
 		PresentSideBySide(vr_mode);
 		break;
+
+#ifdef OPENVR_SUPPORT
+	case VR_OPENVR:
+		PresentOpenVR();
+		break;
+#endif /* OPENVR_SUPPORT */
 
 	case VR_TOPBOTTOM:
 		PresentTopBottom();

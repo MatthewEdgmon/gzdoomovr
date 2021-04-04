@@ -201,6 +201,8 @@ endif()
 
 option (HAVE_VULKAN "Enable Vulkan support" ON)
 
+option(OPENVR_SUPPORT "Enable OpenVR support" ON)
+
 # no, we're not using external asmjit for now, we made too many modifications to our's.
 # if the asmjit author uses our changes then we'll update this.
 

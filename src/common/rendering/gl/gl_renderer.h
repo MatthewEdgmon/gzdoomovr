@@ -98,6 +98,10 @@ private:
 	void PresentCheckerInterleaved();
 	void PresentQuadStereo();
 
+#ifdef OPENVR_SUPPORT
+	void PresentOpenVR();
+#endif /* OPENVR_SUPPORT */
+
 };
 
 struct TexFilter_s

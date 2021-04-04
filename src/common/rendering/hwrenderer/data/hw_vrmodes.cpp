@@ -74,6 +74,9 @@ const VRMode *VRMode::GetVRMode(bool toscreen)
 	case VR_QUADSTEREO:
 	case VR_AMBERBLUE:
 	case VR_SIDEBYSIDELETTERBOX:
+#ifdef OPENVR_SUPPORT
+	case VR_OPENVR:
+#endif /* OPENVR_SUPPORT */
 		return &vrmi_stereo;
 
 	case VR_SIDEBYSIDESQUISHED:
