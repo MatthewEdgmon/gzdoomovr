@@ -7,6 +7,11 @@
 #include "gl_renderbuffers.h"
 #include <functional>
 
+#ifdef OPENVR_SUPPORT
+#include <cstdint>
+#include <openvr.h>
+#endif /* OPENVR_SUPPORT */
+
 #ifdef _MSC_VER
 #pragma warning(disable:4244)
 #endif
@@ -99,6 +104,20 @@ private:
 	void PresentQuadStereo();
 
 #ifdef OPENVR_SUPPORT
+	vr::IVRSystem* mVRSystem = nullptr;
+	vr::Texture_t mEyeTextures[2];
+	std::uint32_t mVRSceneWidth, mVRSceneHeight;
+	bool mRenderDesktopView = true;
+	bool mRenderHMDView = true;
+	bool mIsOpenVRStarted = false;
+
+	static vr::HmdVector3d_t EulerAnglesFromQuaternion(vr::HmdQuaternion_t quaternion);
+	static vr::HmdVector3d_t EulerAnglesFromMatrix(vr::HmdMatrix34_t matrix);
+	static vr::HmdQuaternion_t QuaternionFromMatrix(vr::HmdMatrix34_t matrix);
+
+	void InitializeOpenVR();
+	void InitializeEye(vr::EVREye eye);
+	void PresentEyeFrame(vr::EVREye eye);
 	void PresentOpenVR();
 #endif /* OPENVR_SUPPORT */
 

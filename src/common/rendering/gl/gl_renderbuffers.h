@@ -126,6 +126,9 @@ public:
 	void BlitToEyeTexture(int eye, bool allowInvalidate=true);
 	void BlitFromEyeTexture(int eye);
 	void BindEyeTexture(int eye, int texunit);
+#ifdef OPENVR_SUPPORT
+	void BindEyeFB(int eye, bool readBuffer);
+#endif /* OPENVR_SUPPORT */
 	int NextEye(int eyeCount);
 	int & CurrentEye() { return mCurrentEye; }
 

@@ -37,7 +37,10 @@
 #include "templates.h"
 
 #ifdef OPENVR_SUPPORT
+#include "c_console.h"
+#include <iostream>
 #include <openvr.h>
+#include <sstream>
 #endif /* OPENVR_SUPPORT */
 
 EXTERN_CVAR(Int, vr_mode)
@@ -378,9 +381,189 @@ void FGLRenderer::PresentQuadStereo()
 
 #ifdef OPENVR_SUPPORT
 
+vr::HmdVector3d_t FGLRenderer::EulerAnglesFromQuaternion(vr::HmdQuaternion_t quaternion)
+{
+	double q0 = quaternion.w;
+	// permute axes to make "Y" up/yaw
+	double q2 = quaternion.x;
+	double q3 = quaternion.y;
+	double q1 = quaternion.z;
+
+	// http://stackoverflow.com/questions/18433801/converting-a-3x3-matrix-to-euler-tait-bryan-angles-pitch-yaw-roll
+	double roll = atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2));
+	double pitch = asin(2 * (q0 * q2 - q3 * q1));
+	double yaw = atan2(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3));
+
+	return vr::HmdVector3d_t{ yaw, pitch, roll };
+}
+
+vr::HmdVector3d_t FGLRenderer::EulerAnglesFromMatrix(vr::HmdMatrix34_t matrix)
+{
+	return EulerAnglesFromQuaternion(QuaternionFromMatrix(matrix));
+}
+
+vr::HmdQuaternion_t FGLRenderer::QuaternionFromMatrix(vr::HmdMatrix34_t matrix)
+{
+	vr::HmdQuaternion_t q;
+	typedef float f34[3][4];
+	f34& a = matrix.m;
+	// http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+	float trace = a[0][0] + a[1][1] + a[2][2]; // I removed + 1.0f; see discussion with Ethan
+	if (trace > 0) {// I changed M_EPSILON to 0
+		float s = 0.5f / sqrtf(trace + 1.0f);
+		q.w = 0.25f / s;
+		q.x = (a[2][1] - a[1][2]) * s;
+		q.y = (a[0][2] - a[2][0]) * s;
+		q.z = (a[1][0] - a[0][1]) * s;
+	}
+	else {
+		if (a[0][0] > a[1][1] && a[0][0] > a[2][2]) {
+			float s = 2.0f * sqrtf(1.0f + a[0][0] - a[1][1] - a[2][2]);
+			q.w = (a[2][1] - a[1][2]) / s;
+			q.x = 0.25f * s;
+			q.y = (a[0][1] + a[1][0]) / s;
+			q.z = (a[0][2] + a[2][0]) / s;
+		}
+		else if (a[1][1] > a[2][2]) {
+			float s = 2.0f * sqrtf(1.0f + a[1][1] - a[0][0] - a[2][2]);
+			q.w = (a[0][2] - a[2][0]) / s;
+			q.x = (a[0][1] + a[1][0]) / s;
+			q.y = 0.25f * s;
+			q.z = (a[1][2] + a[2][1]) / s;
+		}
+		else {
+			float s = 2.0f * sqrtf(1.0f + a[2][2] - a[0][0] - a[1][1]);
+			q.w = (a[1][0] - a[0][1]) / s;
+			q.x = (a[0][2] + a[2][0]) / s;
+			q.y = (a[1][2] + a[2][1]) / s;
+			q.z = 0.25f * s;
+		}
+	}
+
+	return q;
+}
+
+void FGLRenderer::InitializeOpenVR()
+{
+	if(vr::VR_IsHmdPresent())
+	{
+		// Set up IVRSystem.
+		vr::EVRInitError error = vr::VRInitError_None;
+
+		mVRSystem = vr::VR_Init(&error, vr::VRApplication_Scene);
+
+		if(error != vr::EVRInitError::VRInitError_None)
+		{
+			std::string error_symbol = vr::VR_GetVRInitErrorAsSymbol(error);
+			std::string error_message = vr::VR_GetVRInitErrorAsEnglishDescription(error);
+			mVRSystem = nullptr;
+			std::cout << "[OpenVR]: " << error_symbol << " " << error_message << std::endl;
+			return;
+		}
+
+		// Setup compositor.
+		if(!vr::VRCompositor())
+		{
+			return;
+		}
+
+		mVRSystem->GetRecommendedRenderTargetSize(&mVRSceneWidth, &mVRSceneHeight);
+
+		// Initialize eyes.
+		InitializeEye(vr::EVREye::Eye_Left);
+		InitializeEye(vr::EVREye::Eye_Right);
+
+		mIsOpenVRStarted = true;
+	}
+}
+
+void FGLRenderer::InitializeEye(vr::EVREye eye)
+{
+	GLuint handle;
+	glGenTextures(1, &handle);
+	glBindTexture(GL_TEXTURE_2D, handle);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, screen->mSceneViewport.width, screen->mSceneViewport.height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+
+	mEyeTextures[eye].handle = (void*)(uintptr_t)handle;
+	mEyeTextures[eye].eType = vr::TextureType_OpenGL;
+	mEyeTextures[eye].eColorSpace = vr::ColorSpace_Linear;
+}
+
+void FGLRenderer::PresentEyeFrame(vr::EVREye eye)
+{
+	if(vr::VRCompositor() == nullptr)
+	{
+		return;
+	}
+
+	mBuffers->BindEyeFB(eye, true);
+
+	// Create handle if it hasn't been created.
+	if(mEyeTextures[eye].handle == nullptr)
+	{
+		GLuint handle;
+		glGenTextures(1, &handle);
+		mEyeTextures[eye].handle = (void*)(uintptr_t) handle;
+		glBindTexture(GL_TEXTURE_2D, handle);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, screen->mSceneViewport.width, screen->mSceneViewport.height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+	}
+
+	glBindTexture(GL_TEXTURE_2D, (GLuint) mEyeTextures[eye].handle);
+	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 0, 0, screen->mSceneViewport.width, screen->mSceneViewport.height, 0);
+
+	vr::EVRCompositorError error = vr::VRCompositor()->Submit(vr::EVREye(eye), &mEyeTextures[eye]);
+
+	if(error != vr::EVRCompositorError::VRCompositorError_None)
+	{
+		std::ostringstream error_message;
+		error_message << "[OpenVR]: VRCompositor()->Submit() EVRCompositorError = " << error << std::endl;
+		AddToConsole(0, error_message.str().c_str());
+		return;
+	}
+}
+
 void FGLRenderer::PresentOpenVR()
 {
-	
+	// Check if we've run OpenVR initialization at least once.
+	if(mIsOpenVRStarted != true)
+	{
+		InitializeOpenVR();
+		return;
+	}
+
+	// Render to desktop.
+	if(mRenderDesktopView == true) {
+		PresentSideBySide(VR_SIDEBYSIDEFULL);
+	}
+
+	// Render to HMD, but only if OpenVR is running.
+	if(mRenderHMDView == true && mIsOpenVRStarted == true) {
+		PresentEyeFrame(vr::EVREye::Eye_Left);
+		PresentEyeFrame(vr::EVREye::Eye_Right);
+
+		// Handle poses.
+		vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+		vr::EVRCompositorError pose_error = vr::VRCompositor()->WaitGetPoses(poses, vr::k_unMaxTrackedDeviceCount, nullptr, 0);
+
+		if (pose_error != vr::EVRCompositorError::VRCompositorError_None)
+		{
+			std::ostringstream error_message;
+			error_message << "[OpenVR]: VRCompositor()->WaitGetPoses() EVRCompositorError " << pose_error << std::endl;
+			AddToConsole(0, error_message.str().c_str());
+			return;
+		}
+
+		vr::TrackedDevicePose_t& poseHMD = poses[vr::k_unTrackedDeviceIndex_Hmd];
+
+		if(poseHMD.bPoseIsValid)
+		{
+			const vr::HmdMatrix34_t& hmdPose = poseHMD.mDeviceToAbsoluteTracking;
+		}
+	}
 }
 
 #endif /* OPENVR_SUPPORT */

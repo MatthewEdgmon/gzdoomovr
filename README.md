@@ -1,6 +1,8 @@
 # Welcome to GZDoomOVR
 
-GZDoomOVR is a port of the popular GZDoom engine to OpenVR.
+GZDoomOVR is a port of the popular GZDoom engine to OpenVR. This port uses code from:
+
+[cmbruns/gz3doom](https://github.com/cmbruns/gz3doom)
 
 # Usage
 

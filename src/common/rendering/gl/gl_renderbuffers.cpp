@@ -573,6 +573,15 @@ void FGLRenderBuffers::BindEyeTexture(int eye, int texunit)
 	glBindTexture(GL_TEXTURE_2D, mEyeTextures[eye].handle);
 }
 
+#ifdef OPENVR_SUPPORT
+// TODO: Maybe this is missing for a reason. Oh well.
+void FGLRenderBuffers::BindEyeFB(int eye, bool readBuffer)
+{
+	CreateEyeBuffers(eye);
+	glBindFramebuffer(readBuffer ? GL_READ_FRAMEBUFFER : GL_FRAMEBUFFER, mEyeFBs[eye].handle);
+}
+#endif /* OPENVR_SUPPORT */
+
 void FGLRenderBuffers::BindDitherTexture(int texunit)
 {
 	if (!mDitherTexture)
